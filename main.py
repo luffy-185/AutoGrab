@@ -6,10 +6,15 @@ from telethon.tl.types import MessageMediaPhoto
 
 
 # ==== CONFIG ====
-API_ID = int(os.getenv("API_ID"))
+API_ID_ENV = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 SESSION = os.getenv("SESSION")
 ADMIN_ID = 8183639661
+
+if not API_ID_ENV or not API_HASH or not SESSION:
+    raise RuntimeError("Missing API_ID, API_HASH or SESSION environment variables.")
+
+API_ID = int(API_ID_ENV)
 
 BOT_USERNAME = "@Slave_waifu_bot"
 DB_FILE = "characters2.json"
@@ -40,7 +45,7 @@ async def send_safe(func, *args, **kwargs):
             wait = getattr(e, "seconds", 10)
             log.warning(f"⚠️ FloodWaitError: sleeping {wait}s")
             await asyncio.sleep(wait)
-        except RpcError as e:
+        except RPCError as e:
             log.error(f"RPC error: {e}")
             await asyncio.sleep(5)
         except Exception as e:
@@ -304,7 +309,8 @@ async def bot_image_handler(event):
         entry = database.get(pid)
 
         if not entry:
-            asyncio.create_task(send_safe(client.forward_messages, -1003220290496, event.message))
+            # forward unknowns to a private log channel if you want (replace with your own ID)
+            # asyncio.create_task(send_safe(client.forward_messages, -1003220290496, event.message))
             return
 
         name, rarity_num = entry
@@ -316,13 +322,12 @@ async def bot_image_handler(event):
             await asyncio.sleep(delay)
 
         await send_safe(event.respond, f"/grab {name.lower()}")
-    
     except Exception as e:
-        asyncio.create_task(asyncio.to_thread(log.error, f"[FastGrab error in {chat_id}]: {e}"))
+        log.error(f"[FastGrab error in {chat_id}]: {e}")
 
 # ==== CONFIG ====
-NAME_CHAT_ID = -1001234567890  # 🔹 Replace with chat ID where others can use /n
-NAME_ACCESS_ENABLED = True     # 🔹 Toggle with /naccess on|off
+NAME_CHAT_ID = -1001234567890  # Replace with chat ID where others can use /n
+NAME_ACCESS_ENABLED = True     # Toggle with /naccess on|off
 
 # ==== /n COMMAND ====
 @client.on(events.NewMessage(pattern=r"^/n"))
@@ -365,7 +370,7 @@ async def toggle_name_access(event):
     state = "✅ Enabled" if NAME_ACCESS_ENABLED else "🛑 Disabled"
     await send_safe(event.reply, f"{state} global access for `/n` command.")
     
-# ==== MAIN ====
+# ==== MAIN (for background worker) ====
 async def main():
     await client.start()
     me = await client.get_me()
@@ -374,7 +379,9 @@ async def main():
     log.info(f"💬 Watching groups: {list(groups)}")
     log.info(f"⭐ Active rarities: {list(active_rarities)}")
     log.info(f"📁 Loaded {len(database)} characters.")
-    await client.run_until_disconnected()
+    # keeps running until disconnected – perfect for a worker
+    async with client:
+        await client.run_until_disconnected()
 
 if __name__ == "__main__":
     asyncio.run(main())
